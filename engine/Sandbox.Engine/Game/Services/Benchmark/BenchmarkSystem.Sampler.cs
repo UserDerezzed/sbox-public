@@ -129,9 +129,16 @@ public partial class BenchmarkSystem
 		private double Percentile( double percentile )
 		{
 			var sortedSequence = samples.OrderBy( n => n ).ToList();
+			if ( sortedSequence.Count == 0 )
+				return 0;
+
 			double position = (sortedSequence.Count + 1) * percentile / 100.0;
 			int index = (int)position - 1;
 			double fraction = position - Math.Floor( position );
+
+			// With too few samples for a low percentile the position lands before the first one - that's the smallest
+			if ( index < 0 )
+				return sortedSequence[0];
 
 			if ( index + 1 < sortedSequence.Count )
 			{
