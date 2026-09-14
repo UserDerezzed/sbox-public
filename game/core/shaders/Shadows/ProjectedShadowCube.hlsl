@@ -45,19 +45,19 @@ int GetCubemapFace( float3 lightDirection )
 	}
 }
 
-// Poisson disc samples for cube filtering
+// Poisson disc samples for cube filtering, all in one table so every quality level shares a single
+// sample site. Quality 1 (Low) uses 5 taps, 2 (Medium) 12 taps, 3 (High) 29 taps.
 
-static const float2 PCFDiscSamples5[] =
+static const float2 PCFDiscSamples[46] =
 {
+	// 5 taps, low quality
 	float2( 0.000000, 2.500000 ),
 	float2( 2.377641, 0.772542 ),
 	float2( 1.469463, -2.022543 ),
 	float2( -1.469463, -2.022542 ),
 	float2( -2.377641, 0.772543 ),
-};
 
-static const float2 PCFDiscSamples12[] =
-{
+	// 12 taps, medium quality
 	float2( 0.000000, 2.500000 ),
 	float2( 1.767767, 1.767767 ),
 	float2( 2.500000, -0.000000 ),
@@ -70,10 +70,8 @@ static const float2 PCFDiscSamples12[] =
 	float2( 1.000015, 0.427335 ),
 	float2( 0.416807, -1.006577 ),
 	float2( -0.408872, 1.024430 ),
-};
 
-static const float2 PCFDiscSamples29[]=
-{
+	// 29 taps, high quality
 	float2( 0.000000, 2.500000 ),
 	float2( 1.016842, 2.283864 ),
 	float2( 1.857862, 1.672826 ),
@@ -104,6 +102,10 @@ static const float2 PCFDiscSamples29[]=
 	float2( -0.692694, -0.086749 ),
 	float2( -0.082476, 0.654088 ),
 };
+
+// Per quality 1..3: first tap in PCFDiscSamples and tap count
+static const uint PCFDiscSampleStart[3] = { 0, 5, 17 };
+static const uint PCFDiscSampleCount[3] = { 5, 12, 29 };
 
 //------------------------------------------------------------------------------
 // ProjectedShadowCube
@@ -193,47 +195,25 @@ struct ProjectedShadowCube
 		{
 			shadowVisibility = shadowMapTextureCube.SampleCmpLevelZero( ShadowDepthPCFSampler, lightDirectionN, compareDistance );
 		}
-		else if ( UserShadowFilterQuality == 1 )
-		{
-			[unroll]
-			for ( int i = 0; i < 5; ++i )
-			{
-				float2 offset = PCFDiscSamples5[i];
-				float3 samplePos = lightDirectionN + sideVector * offset.x + upVector * offset.y;
-				shadowVisibility += shadowMapTextureCube.SampleCmpLevelZero(
-					ShadowDepthPCFSampler,
-					samplePos,
-					compareDistance );
-			}
-			shadowVisibility /= 5.0f;
-		}
-		else if ( UserShadowFilterQuality == 2 )
-		{
-			[unroll]
-			for ( int i = 0; i < 12; ++i )
-			{
-				float2 offset = PCFDiscSamples12[i];
-				float3 samplePos = lightDirectionN + sideVector * offset.x + upVector * offset.y;
-				shadowVisibility += shadowMapTextureCube.SampleCmpLevelZero(
-					ShadowDepthPCFSampler,
-					samplePos,
-					compareDistance );
-			}
-			shadowVisibility /= 12.0f;
-		}
 		else
 		{
-			[unroll]
-			for ( int i = 0; i < 29; ++i )
+			// Low (1), Medium (2) or High (3 and above). One loop for every kernel size, so the generated
+			// code has one sample site instead of 46 - same taps and averaging as separate loops.
+			uint kernel = min( (uint)( UserShadowFilterQuality - 1 ), 2u );
+			uint start = PCFDiscSampleStart[kernel];
+			uint count = PCFDiscSampleCount[kernel];
+
+			[loop]
+			for ( uint i = 0; i < count; ++i )
 			{
-				float2 offset = PCFDiscSamples29[i];
+				float2 offset = PCFDiscSamples[start + i];
 				float3 samplePos = lightDirectionN + sideVector * offset.x + upVector * offset.y;
 				shadowVisibility += shadowMapTextureCube.SampleCmpLevelZero(
 					ShadowDepthPCFSampler,
 					samplePos,
 					compareDistance );
 			}
-			shadowVisibility /= 29.0f;
+			shadowVisibility /= count;
 		}
 
 		// PCF is overly blurry, squaring gets us a tighter shadow
