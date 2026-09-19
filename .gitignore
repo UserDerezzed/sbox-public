@@ -50,6 +50,10 @@
 # Some junk
 #
 
+# KosmicKrisp driver checkout and build tree, created by Setup.sh.
+# Mesa ships .py/.md/.json/.txt, all whitelisted above.
+.kosmickrisp/
+
 # Local input files
 *#local.json
 
